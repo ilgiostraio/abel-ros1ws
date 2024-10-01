@@ -10,12 +10,24 @@ from abel_control.MoveAbelNeck import MoveAbelNeck
 from sensor_msgs.msg import JointState
 from std_msgs.msg import  Float64MultiArray, String, Int64
 from trajectory_msgs.msg import JointTrajectoryPoint
+import threading
+from queue import Queue
+import time
 
 
 arms    = MoveAbelArms()
 neck    = MoveAbelNeck()
 onlyArms = True
 onlyNeck = True
+
+
+def arms_gestures_scheduler(queue):
+	rospy.loginfo("scheduler thread starting")
+	while True:
+		next_gesture = queue.get()
+		rospy.loginfo("I found something in queue")
+		arms.run_gesture(next_gesture, 3)
+		time.sleep(5)
 
 def lookat_callback(data):
 	rospy.loginfo(rospy.get_caller_id() + " I'm looking at:  %s", data.data)
@@ -38,17 +50,10 @@ def gesture_arms_callback(data):
 		data.data = data.data.replace('\\', '')
 		data.data = data.data.replace('\"', '')
 
-		arms.gesture_arms_list()
-		rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
+	arms.gesture_arms_list()
+	rospy.loginfo(rospy.get_caller_id() + " I heard %s and I put it in the queue", data.data)
 
-		arms.run_gesture(data.data, 1)
-
-	else:
-	
-		arms.gesture_arms_list()
-		rospy.loginfo(rospy.get_caller_id() + " I heard %s", data.data)
-
-		arms.run_gesture(data.data, 1)
+	arms_gestures_scheduler_queue.put(data.data)
 
 
 	#class_method = getattr(gesture, data.data)
@@ -118,52 +123,50 @@ def close():
 
 
 if __name__ == '__main__':
-	try:
-		
 
 
-		rospy.init_node('abel_control', log_level=rospy.DEBUG)
-		rate = rospy.Rate(10)
-		
-		lookat_subscriber = rospy.Subscriber("/abel_control/neck/lookat", Float64MultiArray, lookat_callback )
-
-		gesture_arms_subscriber = rospy.Subscriber("/abel_control/arms/gesture", String, gesture_arms_callback )
-		gesture_neck_subscriber = rospy.Subscriber("/abel_control/neck/gesture", String, gesture_neck_callback )
-
-		capture_arms_subscriber = rospy.Subscriber("/abel_control/arms/capture", Int64, capture_arms_callback )
-		capture_neck_subscriber = rospy.Subscriber("/abel_control/neck/capture", Int64, capture_neck_callback )
-
-
-		
-		## -- MOVEIT TEST FOR JOINTS VALUES -- ##
-		moveit_subscriber = rospy.Subscriber("/joint_states", JointState, moveit_callback, queue_size=100 )
-		
-		rospy.loginfo("*** AbelMove Initialization ***")
-		
-		if not onlyArms and not onlyNeck:
-			raise Exception("I know python!")
-		
-		if onlyArms:
-			arms.initialize()
-		
-		if onlyNeck:
-			neck.initialize()
-
-		#arms.run_gesture("neutral",5)
-		
-		#neck.run_posture("neutral",5)
-		#rospy.sleep(10)
-		#close()
-		rospy.loginfo("**** Abel is ready! ****")
-
-		rospy.on_shutdown(close)
-
-		rospy.spin()
+	rospy.init_node('abel_control', log_level=rospy.DEBUG)
+	rate = rospy.Rate(10)
 	
-		
-	except rospy.ROSInterruptException:
-		print("dsafsdaf")
-		pass
+	lookat_subscriber = rospy.Subscriber("/abel_control/neck/lookat", Float64MultiArray, lookat_callback )
+
+	gesture_arms_subscriber = rospy.Subscriber("/abel_control/arms/gesture", String, gesture_arms_callback )
+	gesture_neck_subscriber = rospy.Subscriber("/abel_control/neck/gesture", String, gesture_neck_callback )
+
+	capture_arms_subscriber = rospy.Subscriber("/abel_control/arms/capture", Int64, capture_arms_callback )
+	capture_neck_subscriber = rospy.Subscriber("/abel_control/neck/capture", Int64, capture_neck_callback )
+
+	## INIT THREAD QUEUE 
+	arms_gestures_scheduler_queue = Queue()
+	arms_gestures_scheduler_thread = threading.Thread(target=arms_gestures_scheduler, args=(arms_gestures_scheduler_queue, ))
+	arms_gestures_scheduler_thread.start()
+
+	## -- MOVEIT TEST FOR JOINTS VALUES -- ##
+	moveit_subscriber = rospy.Subscriber("/joint_states", JointState, moveit_callback, queue_size=100 )
+	
+	rospy.loginfo("*** AbelMove Initialization ***")
+	
+	if not onlyArms and not onlyNeck:
+		raise Exception("I know python!")
+	
+	if onlyArms:
+		arms.initialize()
+	
+	if onlyNeck:
+		neck.initialize()
+
+	#arms.run_gesture("neutral",5)
+	
+	#neck.run_posture("neutral",5)
+	#rospy.sleep(10)
+	#close()
+	rospy.loginfo("**** Abel is ready! ****")
+
+	rospy.on_shutdown(close)
+
+	rospy.spin()
+	
+
 		
 
 		
