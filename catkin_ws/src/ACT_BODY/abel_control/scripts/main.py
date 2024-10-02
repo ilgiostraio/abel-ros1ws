@@ -13,7 +13,7 @@ from trajectory_msgs.msg import JointTrajectoryPoint
 import threading
 from queue import Queue
 import time
-
+import random
 
 arms    = MoveAbelArms()
 neck    = MoveAbelNeck()
@@ -21,15 +21,34 @@ onlyArms = True
 onlyNeck = True
 
 
+def get_random_neutral():
+	i = random.randint(1, 15)
+	return f"neutral_{i}"
+
+
 def arms_gestures_scheduler(queue):
-	rospy.loginfo("scheduler thread starting")
+	current_gesture = None
+	rospy.loginfo("[SCHEDULER] thread starting")
 	while True:
 		next_gesture = queue.get()
-		rospy.loginfo("I found something in queue")
+		rospy.loginfo("[SCHEDULER] I found %s in queue", next_gesture)
+		if current_gesture != "neutral" and next_gesture == "neutral":
+			rospy.loginfo("[SCHEDULER] i was NOT in neutral, i am going in neutral neutral")
+			next_gesture = "neutral"
+		elif current_gesture == "neutral" and next_gesture == "neutral":
+			next_gesture = get_random_neutral()
+			rospy.loginfo("[SCHEDULER] I WAS in neutral, i am going in %s", next_gesture)
 		arms.run_gesture(next_gesture, 3)
-		time.sleep(5)
+		#time.sleep(5)
+		current_gesture = next_gesture
+
+lookat_stop_counter = 0
 
 def lookat_callback(data):
+	global lookat_stop_counter
+	lookat_stop_counter = (lookat_stop_counter + 1) % 5
+	if lookat_stop_counter != 0: return
+
 	rospy.loginfo(rospy.get_caller_id() + " I'm looking at:  %s", data.data)
 	if (abs(data.data[0])<=1) and (abs(data.data[1])<=1):
 		x = data.data[0]
@@ -128,6 +147,8 @@ if __name__ == '__main__':
 	rospy.init_node('abel_control', log_level=rospy.DEBUG)
 	rate = rospy.Rate(10)
 	
+	lookat_stop_counter = 0
+
 	lookat_subscriber = rospy.Subscriber("/abel_control/neck/lookat", Float64MultiArray, lookat_callback )
 
 	gesture_arms_subscriber = rospy.Subscriber("/abel_control/arms/gesture", String, gesture_arms_callback )
